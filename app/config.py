@@ -48,6 +48,14 @@ class Settings:
     NGROK_DOMAIN: str = os.getenv("NGROK_DOMAIN", "")
     NGROK_AUTHTOKEN: str = os.getenv("NGROK_AUTHTOKEN", "")
 
+    # OpenRouter (Agent Orchestration / Q&A)
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OR_AGENT_MODEL: str = os.getenv(
+        "OR_AGENT_MODEL",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+    )
+    OR_MAX_RESULTS: int = int(os.getenv("OR_MAX_RESULTS", "4"))
+
 
 settings = Settings()
 
