@@ -9,9 +9,11 @@ build/
 
 # Environment
 .env
+.env.*
+env
+env.example
 .venv/
 venv/
-env/
 
 # IDE
 .vscode/
