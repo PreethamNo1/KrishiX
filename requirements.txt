@@ -1,0 +1,23 @@
+# FastAPI Framework & ASGI Server
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9
+
+# Environment Configuration
+python-dotenv>=1.0.0
+
+# AI & LLM Clients
+sarvamai>=0.1.30
+groq>=0.11.0
+
+# Database & Geospatial
+mysql-connector-python>=8.3.0
+geopy>=2.4.0
+
+# Communications & Networking
+twilio>=9.0.0
+requests>=2.31.0
+
+# Development & Tunneling (Optional)
+ngrok>=1.3.0
+
