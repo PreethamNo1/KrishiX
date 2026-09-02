@@ -2,16 +2,19 @@
 
 > **AI-Powered Voice-First Agricultural Marketplace & Buyer Dispatch Platform**
 
-KrishiX empowers rural, non-literate, and regional-language-speaking farmers to sell agricultural produce effortlessly. By speaking naturally in their native language (e.g., Kannada) via WhatsApp voicemails or cellular telephony, farmers are instantly matched with hyper-local registered commodity buyers within their geographic vicinity.
+KrishiX empowers rural, non-literate, and regional-language-speaking farmers to do more than sell produce. By speaking naturally in their native language (e.g., Kannada) via WhatsApp voicemails or cellular telephony, farmers are **intentionally routed** to one of two capabilities:
+
+1. **Sell produce** — instantly matched with hyper-local registered commodity buyers within their geographic vicinity.
+2. **Ask agricultural questions** — answered by an autonomous **agent orchestration** that browses the web and free literature, then returns a single synthesized, farmer-friendly paragraph.
 
 ---
 
 ## 🌟 Key Features
 
 - 🎙️ **Voice-First Regional Interface**: Accepts voice recordings in Indian languages (default: Kannada `kn-IN`) and translates directly to English using **Sarvam AI's Saaras v4** speech model.
-- 🧠 **Structured Entity Extraction**: Leverages ultra-fast LLM inference via **Groq** (`openai/gpt-oss-20b`) to extract crop name, quantity (with units), and location into structured JSON.
-- 📍 **Geospatial Proximity Matching**: Resolves rural locations using **Geopy (Nominatim)** and executes geodesic distance calculations to find buyers within an adjustable radius (default: 50 km).
-- 📱 **Automated SMS Dispatch**: Instantly notifies matched buyers with crop, quantity, distance, and the farmer's contact phone number via **Twilio SMS**.
+- 🧭 **Intent-Aware Routing**: A classifier (OpenRouter) studies each transcribed message and routes it to the **offer pipeline** or the **Q&A agent pipeline**.
+- 🛒 **Sell-Offer Pipeline**: **Groq** (`openai/gpt-oss-20b`) extracts crop, quantity (with units), and location into structured JSON; **Geopy (Nominatim)** resolves the location; a **geodesic** filter (default 50 km) finds nearby registered buyers; **Twilio SMS** notifies them instantly.
+- 🤖 **Agricultural Q&A Agents (LangGraph Orchestration)**: For questions, a `researcher` agent produces a research brief, then two agents gather information **in parallel** — a `web_agent` (DuckDuckGo, no API key) and a `literature_agent` (free/public-domain knowledge) — and a `synthesizer` merges both into a single paragraph using an **OpenRouter** model.
 - 🖥️ **Desktop Voicemail Client**: Simple Tkinter GUI for agricultural coordinators and mandi operators to test, upload, and process voicemails.
 - 🔒 **Enterprise-Grade Security**: Environment-driven architecture ensuring no credentials or API keys are committed to version control.
 
@@ -20,15 +23,27 @@ KrishiX empowers rural, non-literate, and regional-language-speaking farmers to 
 ## 🏗️ Architecture & Data Flow
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Farmer Voicemail Audio\nKannada] --> B[FastAPI Server\n/process-voice]
     B --> C[Sarvam AI STT\nTranslation to English]
-    C --> D[Groq LLM\nEntity Extraction\nCrop, Qty, Location]
-    D --> E[Geopy Nominatim\nCoordinates Lookup]
-    E --> F[MySQL Database\nFetch Registered Buyers]
-    F --> G[Geodesic Distance Filter\nRadius <= 50km]
-    G --> H[Twilio SMS API\nAlert Matched Buyers]
-    H --> I[Buyers Receive SMS Alert\nCall Farmer Directly]
+
+    C --> D[Intent Classifier\nOpenRouter / LangChain]
+
+    %% Question branch - Agent Orchestration
+    D -- "question" --> Q1[Researcher Agent\nResearch Brief]
+    Q1 --> Q2[Web Agent\nDuckDuckGo]
+    Q1 --> Q3[Literature Agent\nFree Knowledge]
+    Q2 --> Q4[Synthesizer Agent\nSingle Paragraph]
+    Q3 --> Q4
+    Q4 --> R[Answer Returned to Farmer]
+
+    %% Offer branch - Buyer Matching
+    D -- "offer" --> E[Groq LLM\nEntity Extraction\nCrop, Qty, Location]
+    E --> F[Geopy Nominatim\nCoordinates Lookup]
+    F --> G[MySQL Database\nFetch Registered Buyers]
+    G --> H[Geodesic Distance Filter\nRadius <= 50km]
+    H --> I[Twilio SMS API\nAlert Matched Buyers]
+    I --> J[Buyers Receive SMS Alert\nCall Farmer Directly]
 ```
 
 ---
@@ -38,7 +53,7 @@ flowchart LR
 ```
 KrishiX/
 ├── .env                  # Local environment configuration & secrets (GITIGNORED)
-├── .env.example          # Template environment file with setup instructions
+├── env.example           # Template environment file with setup instructions
 ├── .gitignore            # Git exclusion rules for secrets, caches, and temp files
 ├── LICENSE               # Project License (GNU GPL v3)
 ├── README.md             # Project documentation and developer guide
@@ -49,6 +64,12 @@ KrishiX/
 │   ├── config.py         # Centralized configuration & environment loader
 │   ├── database.py       # MySQL connection pool & buyer queries
 │   ├── main.py           # FastAPI server entrypoint & API routes
+│   ├── agents/           # Agent orchestration (classification + Q&A)
+│   │   ├── __init__.py
+│   │   ├── classifier.py     # Intent classifier (offer vs question)
+│   │   ├── qa.py             # LangGraph Q&A workflow (researcher/web/literature/synthesizer)
+│   │   ├── orchestrator.py   # route_message() entry point
+│   │   └── utils.py          # OpenRouter LLM factory & web-search tool
 │   └── services/         # Modular micro-service integrations
 │       ├── __init__.py
 │       ├── speech.py     # Sarvam AI audio translation service
@@ -59,6 +80,9 @@ KrishiX/
 ├── client/               # Client Applications
 │   ├── __init__.py
 │   └── gui.py            # Tkinter desktop voicemail uploader app
+│
+├── docs/                 # Documentation
+│   └── TESTING.md        # Feature-by-feature testing guide
 │
 └── scripts/              # Setup and Utility Scripts
     ├── schema.sql        # MySQL database schema & Karnataka seed data
@@ -77,7 +101,16 @@ KrishiX/
   - [Sarvam AI](https://dashboard.sarvam.ai/) API Key
   - [Groq Console](https://console.groq.com/keys) API Key
   - [Twilio Account](https://console.twilio.com/) SID, Auth Token & SMS Phone Number
+  - [OpenRouter](https://openrouter.ai/keys) API Key (for the Q&A agent orchestration)
   - [Ngrok](https://ngrok.com/) Account (Optional, for public webhooks)
+
+> **Note:** The `web_agent` uses DuckDuckGo search, which requires **no API key**.
+
+---
+
+### 📖 Testing Guide
+
+For a detailed feature-by-feature testing procedure and the purpose of each component, see **[docs/TESTING.md](docs/TESTING.md)**.
 
 ---
 
@@ -108,8 +141,8 @@ pip install -r requirements.txt
 Copy the example environment file:
 
 ```bash
-copy .env.example .env     # Windows
-# or: cp .env.example .env # Linux/macOS
+copy env.example .env     # Windows
+# or: cp env.example .env # Linux/macOS
 ```
 
 Open `.env` and fill in your actual credentials:
@@ -143,6 +176,11 @@ API_URL=http://127.0.0.1:8000/process-voice
 
 # Proximity Matching Threshold (Kilometers)
 MATCH_RADIUS_KM=50
+
+# OpenRouter (Agricultural Q&A Agent Orchestration)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OR_AGENT_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free
+OR_MAX_RESULTS=4
 ```
 
 ---
@@ -206,10 +244,14 @@ python scripts/tunnel.py
 - **Request (Multipart Form Data)**:
   - `file`: Audio file (`.ogg`, `.opus`, `.wav`, `.mp3`, `.m4a`)
   - `farmer_phone`: String (e.g., `+919876543210`)
-- **Success Response (200 OK)**:
+- **Success Response — Offer (200 OK)**:
   ```json
   {
     "status": "success",
+    "type": "offer",
+    "intent": "offer",
+    "confidence": 0.98,
+    "reason": "Farmer is selling 5 quintals of tomato in Mandya.",
     "translation": "I have 5 quintals of fresh tomatoes available in Mandya.",
     "extracted_data": {
       "crop": "tomato",
@@ -220,6 +262,19 @@ python scripts/tunnel.py
     "matched_buyers_count": 2
   }
   ```
+- **Success Response — Question (200 OK)**:
+  ```json
+  {
+    "status": "success",
+    "type": "question",
+    "intent": "question",
+    "confidence": 0.97,
+    "reason": "Farmer is asking how to control tomato blight.",
+    "translation": "How do I control tomato blight in my field?",
+    "answer": "Tomato blight (early and late) is best controlled by... "
+  }
+  ```
+  The `answer` field contains the single synthesized paragraph produced by the Q&A agent orchestration (web + literature findings).
 
 ---
 

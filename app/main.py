@@ -11,6 +11,7 @@ from app.services.speech import transcribe_and_translate
 from app.services.llm import extract_entities
 from app.services.geo import geocode_location, find_buyers_in_radius
 from app.services.notifier import send_buyer_alerts
+from app.agents.orchestrator import route_message
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("krishix")
@@ -45,9 +46,9 @@ async def process_farmer_voice(
     """
     Process farmer voice recording:
     1. Transcribe and translate voice audio (Kannada to English) via Sarvam AI.
-    2. Extract crop, quantity, and location entities via Groq LLM.
-    3. Geocode farmer location and filter buyers within matched radius.
-    4. Dispatch SMS alerts to nearby buyers via Twilio.
+    2. Classify the intent: agricultural question vs. sell offer.
+    3. If a question: route to the agent orchestration (Q&A) and return the answer.
+    4. If an offer: extract entities, geocode, filter buyers, dispatch SMS.
     """
     temp_id = uuid.uuid4().hex[:8]
     safe_filename = os.path.basename(file.filename or "audio.ogg")
@@ -65,7 +66,29 @@ async def process_farmer_voice(
             logger.error(f"Sarvam API transcription failed: {e}")
             return {"error": f"Sarvam API failed: {str(e)}"}
 
-        # Step 2: Groq LLM - Entity Extraction
+        # Step 2: Intent classification (question vs. sell offer)
+        routing = route_message(english_text)
+        logger.info(
+            "Classified intent='%s' confidence=%s reason='%s'",
+            routing.get("intent"),
+            routing.get("confidence"),
+            routing.get("reason"),
+        )
+
+        # Step 2b: If the farmer is asking a question, run the Q&A agents and return.
+        if routing.get("intent") == "question":
+            answer = routing.get("answer", "")
+            return {
+                "status": "success",
+                "type": "question",
+                "intent": "question",
+                "confidence": routing.get("confidence", 0.0),
+                "reason": routing.get("reason", ""),
+                "translation": english_text,
+                "answer": answer,
+            }
+
+        # Step 3: Groq LLM - Entity Extraction (offer pipeline)
         try:
             entities = extract_entities(english_text)
         except Exception as e:
@@ -74,7 +97,7 @@ async def process_farmer_voice(
 
         farmer_location = entities.get("location", "Unknown")
 
-        # Step 3: Geocoding & Proximity Radius Matching
+        # Step 4: Geocoding & Proximity Radius Matching
         farmer_coords = geocode_location(farmer_location)
         if not farmer_coords:
             logger.warning(f"Could not geocode location: {farmer_location}")
@@ -89,7 +112,7 @@ async def process_farmer_voice(
 
         matched_buyers = find_buyers_in_radius(farmer_coords, buyers)
 
-        # Step 4: Dispatch Outbound Alerts via Twilio
+        # Step 5: Dispatch Outbound Alerts via Twilio
         alerts_sent = send_buyer_alerts(
             matched_buyers=matched_buyers,
             crop=entities.get("crop", "produce"),
@@ -100,6 +123,10 @@ async def process_farmer_voice(
 
         return {
             "status": "success",
+            "type": "offer",
+            "intent": routing.get("intent", "offer"),
+            "confidence": routing.get("confidence", 0.0),
+            "reason": routing.get("reason", ""),
             "translation": english_text,
             "extracted_data": entities,
             "buyers_alerted": alerts_sent,
