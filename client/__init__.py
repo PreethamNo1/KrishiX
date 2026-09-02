@@ -1,0 +1,2 @@
+"""KrishiX Desktop Client Package."""
+
